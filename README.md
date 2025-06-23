@@ -1,6 +1,8 @@
 # 🐝 Hive DevTool for Dart DevTools
 A Flutter package that integrates Hive with Dart DevTools, allowing developers to conveniently inspect and visualize Hive boxes and cached data directly within their development workflow.
 
+![Screenshot of dart dev tools](readme_screenshot.png)
+
 ## Features
 
 - View all active Hive boxes in Dart DevTools
@@ -19,102 +21,54 @@ Create a file called `hive_service.dart`
 Add the following code:
 
 ```dart
-import 'package:hive_dev_tools/services/service_manager_service.dart';
-import 'package:vm_service/vm_service.dart' hide VmService;
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart'
+if (dart.library.html) 'src/stub/path_provider.dart';
 
 class HiveService {
   const HiveService._();
 
-  static final _boxDataExpression = 'HiveService.boxData';
-  static final _getBoxDataExpression = 'HiveService.getBoxData()';
+  static var boxData = <String, Map<dynamic, dynamic>>{};
 
-  static Future<void> evaluateGetBoxDataExpression() async {
-    await ServiceManagerService.evalInRunningApp(_getBoxDataExpression);
-  }
-
-  static Future<Map<String, Map<String, String>>> fetchBoxData() async {
-    final hiveObj = await _getHiveAppObj();
-
-    final hiveBoxes = await _getHiveBoxes(hiveObj!);
-
-    final Map<String, Map<String, String>> hiveData = {};
-    for (var key in hiveBoxes.keys) {
-      hiveData[key] = await _getHiveBoxData(hiveBoxes[key]);
-    }
-    return hiveData;
-  }
-
-  static Future<Obj?> _getHiveAppObj() async {
-    final response = await ServiceManagerService.evalInRunningApp(
-      _boxDataExpression,
-    );
-    final objectId = (response as InstanceRef).id!;
-    return await ServiceManagerService.getObject(objectId);
-  }
-
-  static Future<Map<String, Obj?>> _getHiveBoxes(Obj? obj) async {
-    final Map<String, Obj?> map = {};
-    if (obj == null) {
-      return map;
+  static Future<Map<String, Map<dynamic, dynamic>>> getBoxData() async {
+    final boxData = <String, Map<dynamic, dynamic>>{};
+    if (!kDebugMode) {
+      return boxData;
     }
 
-    final List<dynamic> associations = obj.toJson()['associations'];
-    for (final association in associations) {
-      if (association is Map<String, dynamic> &&
-          association.containsKey('key') &&
-          association.containsKey('value')) {
-        final dynamic key = association['key'];
-        final dynamic value = association['value'];
+    final boxNames = await _getBoxNames();
 
-        // Process the key
-        String? keyString;
-        if (key is Map<String, dynamic> && key.containsKey('valueAsString')) {
-          keyString = key['valueAsString'] as String;
-        } else {
-          // Handle cases where the key is not a simple string
-          keyString = key.toString();
-        }
-
-        // Process the value
-        final valueId = value['id'] as String;
-        final valueObj = await ServiceManagerService.getObject(valueId);
-        map[keyString] = valueObj;
+    for (final boxName in boxNames) {
+      try {
+        final box = await Hive.openBox(boxName);
+        boxData[boxName] = box.toMap();
+      } catch (e) {
+        debugPrint('Error opening or reading box "$boxName": $e');
       }
     }
-    return map;
+    HiveService.boxData = boxData;
+    return boxData;
   }
 
-  static Future<Map<String, String>> _getHiveBoxData(Obj? obj) async {
-    final Map<String, String> map = {};
-    if (obj == null) {
-      return map;
-    }
+  static Future<List<String>> _getBoxNames() async {
+    final appDir = await getApplicationDocumentsDirectory();
 
-    final List<dynamic> associations = obj.toJson()['associations'];
-    for (final association in associations) {
-      if (association is Map<String, dynamic> &&
-          association.containsKey('key') &&
-          association.containsKey('value')) {
-        final dynamic key = association['key'];
-        final dynamic value = association['value'];
+    final directory = Directory(appDir.path);
+    final List<FileSystemEntity> entities = await directory.list().toList();
 
-        // Process the key
-        String? keyString;
-        if (key is Map<String, dynamic> && key.containsKey('valueAsString')) {
-          keyString = key['valueAsString'] as String;
-        } else {
-          // Handle cases where the key is not a simple string
-          keyString = key.toString();
-        }
+    final List<String> boxNames =
+    entities
+        .where((file) => file.path.endsWith('.hive'))
+        .map((file) => file.path.split('/').last.split('.hive').first)
+        .toList();
 
-        // Process the value
-        final valueString = value['valueAsString'] as String;
-        map[keyString] = valueString;
-      }
-    }
-    return map;
+    return boxNames;
   }
 }
+
 
 ```
 
