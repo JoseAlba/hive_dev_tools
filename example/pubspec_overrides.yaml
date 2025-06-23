@@ -1,0 +1,4 @@
+# melos_managed_dependency_overrides: hive_dev_tools
+dependency_overrides:
+  hive_dev_tools:
+    path: ..
